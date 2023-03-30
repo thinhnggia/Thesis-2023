@@ -92,7 +92,8 @@ def tokenize_to_sentences(text, max_sentlength, create_vocab_flag=False):
 
 
 def text_tokenizer(text, replace_url_flag=True, tokenize_sent_flag=True, create_vocab_flag=False):
-    text = replace_url(text)
+    if replace_url_flag:
+        text = replace_url(text)
     text = text.replace(u'"', u'')
     if "..." in text:
         text = re.sub(r'\.{3,}(\s+\.{3,})*', '...', text)
@@ -116,7 +117,7 @@ def read_pos_vocab(read_configs):
 
     with open(file_path, 'rb') as train_file:
         train_essays_list = pickle.load(train_file)
-    for index, essay in enumerate(train_essays_list[:16]):
+    for _, essay in enumerate(train_essays_list[:16]):
         content = essay['content_text']
         content = text_tokenizer(content, True, True, True)
         content = [w.lower() for w in content]
@@ -185,7 +186,7 @@ def get_score_vector_positions():
     }
 
 
-def read_essay_sets(essay_list, readability_features, normalized_features_df, pos_tags):
+def read_essay_sets(essay_list, readability_features, normalized_features_df, pos_vocab):
     out_data = {
         'essay_ids': [],
         'pos_x': [],
@@ -197,22 +198,33 @@ def read_essay_sets(essay_list, readability_features, normalized_features_df, po
         'max_sentlen': -1
     }
     for essay in essay_list:
+        # Get general data
         essay_id = int(essay['essay_id'])
         essay_set = int(essay['prompt_id'])
-        content = essay['content_text']
+        out_data['prompt_ids'].append(essay_set)
+        out_data['essay_ids'].append(essay_id)
+
+        # Get label vector
         scores_and_positions = get_score_vector_positions()
         y_vector = [-1] * len(scores_and_positions)
         for score in scores_and_positions.keys():
             if score in essay.keys():
                 y_vector[scores_and_positions[score]] = int(essay[score])
         out_data['data_y'].append(y_vector)
+
+        # Get readability features
         item_index = np.where(readability_features[:, :1] == essay_id)
         item_row_index = item_index[0][0]
         item_features = readability_features[item_row_index][1:]
         out_data['readability_x'].append(item_features)
+
+        # Get handcrafted features
         feats_df = normalized_features_df[normalized_features_df.loc[:, 'item_id'] == essay_id]
         feats_list = feats_df.values.tolist()[0][1:]
         out_data['features_x'].append(feats_list)
+
+        # Get pos tag
+        content = essay['content_text']
         sent_tokens = text_tokenizer(content, replace_url_flag=True, tokenize_sent_flag=True)
         sent_tokens = [[w.lower() for w in s] for s in sent_tokens]
 
@@ -225,23 +237,22 @@ def read_essay_sets(essay_list, readability_features, normalized_features_df, po
                     out_data['max_sentlen'] = length
                 tags = nltk.pos_tag(sent)
                 for tag in tags:
-                    if tag[1] in pos_tags:
-                        tag_indices.append(pos_tags[tag[1]])
+                    if tag[1] in pos_vocab:
+                        tag_indices.append(pos_vocab[tag[1]])
                     else:
-                        tag_indices.append(pos_tags['<unk>'])
+                        tag_indices.append(pos_vocab['<unk>'])
                 sent_tag_indices.append(tag_indices)
                 tag_indices = []
 
         out_data['pos_x'].append(sent_tag_indices)
-        out_data['prompt_ids'].append(essay_set)
-        out_data['essay_ids'].append(essay_id)
         if out_data['max_sentnum'] < len(sent_tag_indices):
             out_data['max_sentnum'] = len(sent_tag_indices)
+
     assert(len(out_data['pos_x']) == len(out_data['readability_x']))
     return out_data
 
 
-def read_essays(read_configs, pos_tags):
+def read_essays(read_configs, pos_vocab):
     readability_features = get_readability_features(read_configs['readability_path'])
     linguistic_features = get_linguistic_features(read_configs['features_path'])
     normalized_linguistic_features = get_normalized_features(linguistic_features)
@@ -251,9 +262,9 @@ def read_essays(read_configs, pos_tags):
         dev_essays_list = pickle.load(dev_file)
     with open(read_configs['test_path'], 'rb') as test_file:
         test_essays_list = pickle.load(test_file)
-    train_data = read_essay_sets(train_essays_list, readability_features, normalized_linguistic_features, pos_tags)
-    dev_data = read_essay_sets(dev_essays_list, readability_features, normalized_linguistic_features, pos_tags)
-    test_data = read_essay_sets(test_essays_list, readability_features, normalized_linguistic_features, pos_tags)
+    train_data = read_essay_sets(train_essays_list, readability_features, normalized_linguistic_features, pos_vocab)
+    dev_data = read_essay_sets(dev_essays_list, readability_features, normalized_linguistic_features, pos_vocab)
+    test_data = read_essay_sets(test_essays_list, readability_features, normalized_linguistic_features, pos_vocab)
     return train_data, dev_data, test_data
 
 

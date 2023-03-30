@@ -25,7 +25,7 @@ class CTS(nn.Module):
     CTS Pytorch
     """
     def __init__(self, pos_vocab_size, maxum, maxlen, readability_count, linguistic_count, 
-                 config: Configs, output_dim) -> None:
+                 config: Configs, output_dim, **kwargs) -> None:
         super(CTS, self).__init__()
         dropout_prob = config.DROPOUT
         cnn_filters = config.CNN_FILTERS

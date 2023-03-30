@@ -28,7 +28,8 @@ def data_pipeline(data, max_sentlen, max_sentnum):
         "pos": X_pos,
         "linguistic": X_linguistic_features,
         "readability": X_readability,
-        "scores": Y
+        "scores": Y,
+        "prompt_ids": data['prompt_ids']
     })
     return dataset
 
@@ -39,8 +40,7 @@ def get_dataset(config: Configs, args) -> dict:
         "dev_path": os.path.join(config.DATA_PATH, str(args.test_prompt_id), 'dev.pkl'),
         "test_path": os.path.join(config.DATA_PATH, str(args.test_prompt_id), 'test.pkl'),
         "features_path": config.FEATURES_PATH,
-        "readability_path": config.READABILITY_PATH,
-        "vocab_size": config.VOCAB_SIZE
+        "readability_path": config.READABILITY_PATH
     }
 
     # Get postag dictionary
@@ -74,4 +74,3 @@ def get_dataset(config: Configs, args) -> dict:
     }
 
 
-    
