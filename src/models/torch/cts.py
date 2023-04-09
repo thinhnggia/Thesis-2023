@@ -10,13 +10,11 @@ import tensorflow as tf
 from tensorflow.keras import Model
 
 from src.config.config import Configs
-from src.models.custom_layers import (
+from .custom_layers import (
     ZeroMaskedEntries, 
     AttentionPool, 
     TimeDistributed, 
-    DotProductAttention,
-    AttentionTF,
-    ZeroMaskedEntriesTF
+    DotProductAttention
 )
 
 
@@ -24,14 +22,14 @@ class CTS(nn.Module):
     """
     CTS Pytorch
     """
-    def __init__(self, pos_vocab_size, maxum, maxlen, readability_count, linguistic_count, 
+    def __init__(self, pos_vocab_size, maxnum, maxlen, readability_count, linguistic_count, 
                  config: Configs, output_dim, **kwargs) -> None:
         super(CTS, self).__init__()
         dropout_prob = config.DROPOUT
         cnn_filters = config.CNN_FILTERS
         cnn_kernel_size = config.CNN_KERNEL_SIZE
         lstm_units = config.LSTM_UNITS
-        self.maxum = maxum
+        self.maxnum = maxnum
         self.maxlen = maxlen
         self.pos_embedding_dim = config.EMBEDDING_DIM
 
@@ -68,10 +66,10 @@ class CTS(nn.Module):
         pos_x = self.pos_embedding(pos)
         pos_x_maskedout = self.zero_masked_entries(pos_x)
         pos_drop_x = self.drop_out(pos_x_maskedout)
-        pos_resh_W = pos_drop_x.view(-1, self.maxum, self.maxlen, self.pos_embedding_dim)
-        pos_resh_W = torch.transpose(pos_resh_W, 2, 3) # Swap the length and embedding dimension
+        pos_resh_W = pos_drop_x.contiguous().view(-1, self.maxnum, self.maxlen, self.pos_embedding_dim)
+        pos_resh_W = torch.swapaxes(pos_resh_W, 2, 3) # Swap the length and embedding dimension
         pos_zcnn = self.time_distributed_conv(pos_resh_W)
-        pos_zcnn = torch.transpose(pos_zcnn, 2, 3) # Swap the length and embedding dimension
+        pos_zcnn = torch.swapaxes(pos_zcnn, 2, 3).contiguous() # Swap the length and embedding dimension
         pos_avg_zcnn = self.time_distributed_att(pos_zcnn)
         pos_hz_lstm_list = [self.trait_lstm[index](pos_avg_zcnn)[0] for index in range(self.output_dim)]
         pos_avg_hz_lstm_list = [self.trait_att_pool[index](pos_hz_lstm) for index, pos_hz_lstm in enumerate(pos_hz_lstm_list)]
@@ -95,48 +93,3 @@ class CTS(nn.Module):
         y = torch.cat([pred for pred in final_preds], dim=-1)
 
         return y
-
-
-def build_CTS(pos_vocab_size, maxnum, maxlen, readability_feature_count,
-              linguistic_feature_count, configs, output_dim):
-    pos_embedding_dim = configs.EMBEDDING_DIM
-    dropout_prob = configs.DROPOUT
-    cnn_filters = configs.CNN_FILTERS
-    cnn_kernel_size = configs.CNN_KERNEL_SIZE
-    lstm_units = configs.LSTM_UNITS
-
-    pos_word_input = layers.Input(shape=(maxnum*maxlen,), dtype='int32', name='pos_word_input')
-    pos_x = layers.Embedding(output_dim=pos_embedding_dim, input_dim=pos_vocab_size, input_length=maxnum*maxlen,
-                             weights=None, mask_zero=True, name='pos_x')(pos_word_input)
-    pos_x_maskedout = ZeroMaskedEntriesTF(name='pos_x_maskedout')(pos_x)
-    pos_drop_x = layers.Dropout(dropout_prob, name='pos_drop_x')(pos_x_maskedout)
-    pos_resh_W = layers.Reshape((maxnum, maxlen, pos_embedding_dim), name='pos_resh_W')(pos_drop_x)
-    pos_zcnn = layers.TimeDistributed(layers.Conv1D(cnn_filters, cnn_kernel_size, padding='valid'), name='pos_zcnn')(pos_resh_W)
-    pos_avg_zcnn = layers.TimeDistributed(AttentionTF(), name='pos_avg_zcnn')(pos_zcnn)
-    linguistic_input = layers.Input((linguistic_feature_count,), name='linguistic_input')
-    readability_input = layers.Input((readability_feature_count,), name='readability_input')
-
-    pos_hz_lstm_list = [layers.LSTM(lstm_units, return_sequences=True)(pos_avg_zcnn) for _ in range(output_dim)]
-    pos_avg_hz_lstm_list = [AttentionTF()(pos_hz_lstm) for pos_hz_lstm in pos_hz_lstm_list]
-    pos_avg_hz_lstm_feat_list = [layers.Concatenate()([pos_rep, linguistic_input, readability_input])
-                                 for pos_rep in pos_avg_hz_lstm_list]
-    pos_avg_hz_lstm = tf.concat([layers.Reshape((1, lstm_units + linguistic_feature_count + readability_feature_count))(pos_rep)
-                                 for pos_rep in pos_avg_hz_lstm_feat_list], axis=-2)
-
-    final_preds = []
-    for index in range(output_dim):
-        mask = np.array([True for _ in range(9)])
-        mask[index] = False
-        non_target_rep = tf.boolean_mask(pos_avg_hz_lstm, mask, axis=-2)
-        target_rep = pos_avg_hz_lstm[:, index:index+1]
-        att_attention = layers.Attention()([target_rep, non_target_rep])
-        attention_concat = tf.concat([target_rep, att_attention], axis=-1)
-        attention_concat = layers.Flatten()(attention_concat)
-        final_pred = layers.Dense(units=1, activation='sigmoid')(attention_concat)
-        final_preds.append(final_pred)
-
-    y = layers.Concatenate()([pred for pred in final_preds])
-
-    model = keras.Model(inputs=[pos_word_input, linguistic_input, readability_input], outputs=y)
-    model.summary()
-    return model

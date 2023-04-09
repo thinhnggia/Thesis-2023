@@ -6,30 +6,32 @@ import numpy as np
 
 from tensorflow.keras import layers
 from tensorflow.keras.models import Model
-from src.models.custom_layers import ZeroMaskedEntriesTF, ZeroMaskedEntries, AttentionTF, AttentionPool, TimeDistributed
-from src.models.cts import CTS, build_CTS
-from src.config.config import Configs
 from pytorch_model_summary import summary
 from transformers import AutoModel, BertModel
 
-# # Common
-# init_shape = (1, 4850)
-# readability_shape = (1, 35)
-# linguistic_shape = (1, 51)
-# pos_vocab_size = 36
-# maxnum = 97
-# maxlen = 50
-# readability_count = 35
-# linguistic_count = 51
-# config = Configs()
-# output_dim = 9
+from src.models.torch.cts import CTS
+from src.models.tensorflow.cts import CTSTF
+from src.models.tensorflow.cts_bert import CTSBertTF
+from src.config.config import Configs
 
-# input_data = np.random.randint(36, size=init_shape)
-# input_readability = np.random.randn(*readability_shape)
-# input_linguistic = np.random.randn(*linguistic_shape)
+# Common
+init_shape = (1, 4850)
+readability_shape = (1, 35)
+linguistic_shape = (1, 51)
+pos_vocab_size = 36
+maxnum = 97
+maxlen = 50
+readability_count = 35
+linguistic_count = 51
+config = Configs()
+output_dim = 9
+
+input_data = np.random.randint(36, size=init_shape)
+input_readability = np.random.randn(*readability_shape)
+input_linguistic = np.random.randn(*linguistic_shape)
 
 # # Pytorch
-# torch_input = torch.from_numpy(input_data)
+# torch_input = torch.from_numpy(input_data).long()
 # torch_readability = torch.from_numpy(input_readability).float()
 # torch_linguistic = torch.from_numpy(input_linguistic).float()
 # torch_model = CTS(
@@ -47,10 +49,13 @@ from transformers import AutoModel, BertModel
 # print("Pytorch model stats: ")
 # print(model_stats)
 
-# # Tensorflow
+# Tensorflow
 # tf.random.set_seed(1)
-# input = layers.Input(shape=init_shape[1:])
-# model = build_CTS(
+# input_ids_shape = (1, 512)
+# attention_masks_shape = (1, 512)
+# input_ids = np.random.randint(4000, size=input_ids_shape)
+# attention_masks = np.random.randint(1, size=attention_masks_shape)
+# model = CTSTF(
 #     pos_vocab_size,
 #     maxnum,
 #     maxlen,
@@ -59,35 +64,13 @@ from transformers import AutoModel, BertModel
 #     config,
 #     output_dim
 # )
-# tf_output = model.predict([input_data, input_linguistic, input_readability])
-
-# print("Input data shape: ", input_data.shape)
-# print("Tensorflow output shape: ", tf_output.shape)
-# print("Pytorch output shape: ", torch_output.shape)
-
-# input_readability = np.random.randn(97, 50, 50)
-# input = layers.Input(shape=(50, 50))
-# output = layers.Conv1D(100, 3, padding="valid")(input)
-# model = Model(inputs=input, outputs=output)
-# tf_output = model(input_readability)
-# import pdb; pdb.set_trace()
-
-# input_data = np.random.randn(1, 97, 100)
-# torch_data = torch.from_numpy(input_data).float()
-# lstm = nn.LSTM(input_size=100, hidden_size=100, bidirectional=False, batch_first=True)
-# lstm_output = lstm(torch_data)
-# import pdb; pdb.set_trace()
-
-# torch.manual_seed(1)
-# input_data = np.array([1])
-# torch_data = torch.from_numpy(input_data).int()
-# output = nn.Embedding(4, 5, padding_idx=0)(torch_data)
-
-torch.manual_seed(1)
-input = np.array([[1]])
-attention_ids = np.array([[0]])
-input_data = torch.from_numpy(input).long()
-attention_ids = torch.from_numpy(attention_ids).long()
-model = BertModel.from_pretrained("bert-base-uncased", return_dict=False)
-output = model(input_data, attention_ids)
-import pdb; pdb.set_trace()
+# model = CTSBertTF.from_pretrained(
+#     "bert-base-uncased", 
+#     pos_vocab_size=pos_vocab_size, 
+#     maxnum=maxnum,
+#     maxlen=maxlen,
+#     readability_feature_count=readability_count,
+#     linguistic_feature_count=linguistic_count,
+#     configs=config,
+    # output_dim=output_dim)
+# tf_output = model(input_ids, attention_masks)

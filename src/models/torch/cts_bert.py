@@ -6,8 +6,8 @@ import torch.nn.functional as F
 
 from transformers import BertPreTrainedModel, BertConfig, BertModel
 
-from src.models.cts import CTS
-from src.models.prompt_tuning import BertPrefixForSequenceClassification
+from .cts import CTS
+from .prompt_tuning import BertPrefixForSequenceClassification
 
 def init_weights(m):
     if isinstance(m, nn.Linear):

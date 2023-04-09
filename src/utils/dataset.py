@@ -91,7 +91,16 @@ def tokenize_to_sentences(text, max_sentlength, create_vocab_flag=False):
     return sent_tokens
 
 
-def text_tokenizer(text, replace_url_flag=True, tokenize_sent_flag=True, create_vocab_flag=False):
+def text_tokenizer(text, tokenize_sent_flag=True, create_vocab_flag=False):
+    tokens = tokenize(text)
+    if tokenize_sent_flag:
+        text = " ".join(tokens)
+        sent_tokens = tokenize_to_sentences(text, MAX_SENTLEN, create_vocab_flag)
+        return sent_tokens
+    else:
+        raise NotImplementedError
+    
+def preprocess_text(text, replace_url_flag=True):
     if replace_url_flag:
         text = replace_url(text)
     text = text.replace(u'"', u'')
@@ -101,14 +110,7 @@ def text_tokenizer(text, replace_url_flag=True, tokenize_sent_flag=True, create_
         text = re.sub(r'\?{2,}(\s+\?{2,})*', '?', text)
     if "!!" in text:
         text = re.sub(r'\!{2,}(\s+\!{2,})*', '!', text)
-
-    tokens = tokenize(text)
-    if tokenize_sent_flag:
-        text = " ".join(tokens)
-        sent_tokens = tokenize_to_sentences(text, MAX_SENTLEN, create_vocab_flag)
-        return sent_tokens
-    else:
-        raise NotImplementedError
+    return text
 
 
 def read_pos_vocab(read_configs):
@@ -119,7 +121,8 @@ def read_pos_vocab(read_configs):
         train_essays_list = pickle.load(train_file)
     for _, essay in enumerate(train_essays_list[:16]):
         content = essay['content_text']
-        content = text_tokenizer(content, True, True, True)
+        proc_content = preprocess_text(content)
+        content = text_tokenizer(proc_content, True, True)
         content = [w.lower() for w in content]
         tags = nltk.pos_tag(content)
         for tag in tags:
@@ -194,6 +197,7 @@ def read_essay_sets(essay_list, readability_features, normalized_features_df, po
         'features_x': [],
         'data_y': [],
         'prompt_ids': [],
+        "original_text": [],
         'max_sentnum': -1,
         'max_sentlen': -1
     }
@@ -225,7 +229,10 @@ def read_essay_sets(essay_list, readability_features, normalized_features_df, po
 
         # Get pos tag
         content = essay['content_text']
-        sent_tokens = text_tokenizer(content, replace_url_flag=True, tokenize_sent_flag=True)
+        proc_content = preprocess_text(content)
+        out_data['original_text'].append(proc_content)
+
+        sent_tokens = text_tokenizer(proc_content, tokenize_sent_flag=True)
         sent_tokens = [[w.lower() for w in s] for s in sent_tokens]
 
         sent_tag_indices = []
