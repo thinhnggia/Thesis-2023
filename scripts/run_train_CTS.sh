@@ -1,8 +1,8 @@
 seed=12 # Seed for parameters random init
 
 # Training
-# for prompt_id in {1..8}
-for prompt_id in 8
+for prompt_id in {1..8}
+# for prompt_id in 1
 do
     PYTHONPATH=./ python src/tools/train.py \
     --seed ${seed} \

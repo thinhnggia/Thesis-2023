@@ -7,18 +7,29 @@ import wandb
 import numpy as np
 import tensorflow as tf
 
+from transformers import BertTokenizer
 from torch.optim import RMSprop
 from torch.utils.data import DataLoader
 from transformers import get_scheduler
 from tqdm import tqdm
 from wandb.keras import WandbCallback
+from tensorflow.keras.optimizers import SGD
 
+from src.utils.dataset import parse_dataset
 from src.dataset.asap_dataset import get_dataset
 from src.config.config import Configs
 from src.evaluate.loss import masked_loss_function, tf_masked_loss_function
 from src.evaluate.evaluate import Evaluator, TFEvaluator
 from src.models import get_tf_model, get_torch_model
-from transformers import BertTokenizer
+
+
+def get_optimizer(opt):
+    if opt == "rmsprop":
+        return opt
+    elif opt == "sgd":
+        return SGD(lr=1e-3, momentum=0.9)
+    else:
+        raise NotImplementedError("Opt is not yet supported ")
 
 
 def set_seed(seed):
@@ -27,28 +38,6 @@ def set_seed(seed):
     torch.manual_seed(seed)
     tf.random.set_seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
-
-def parse_dataset(dataset, use_bert=False):
-    if use_bert:
-        inputs = [
-            np.array(dataset["pos"]),
-            np.array(dataset["linguistic"]),
-            np.array(dataset["readability"]),
-            np.array(dataset["input_ids"]),
-            np.array(dataset["attention_mask"]),
-            np.array(dataset["token_type_ids"])
-        ]
-    else:
-        inputs = [
-            np.array(dataset["pos"]),
-            np.array(dataset["linguistic"]),
-            np.array(dataset["readability"])
-        ]
-
-    prompt_ids = dataset["prompt_ids"]
-    Y = np.array(dataset["scores"])
-
-    return inputs, prompt_ids, Y 
 
 
 def train_torch(args, config, dataset):
@@ -160,18 +149,19 @@ def train_tf(args, config, dataset):
             "epochs": config.EPOCHS,
             "optimizer": config.OPTIMIZER
         },
-        group=config.MODEL_NAME,
+        group=f"{config.MODEL_NAME}_all",
         name=run_name
     )
 
     # Set to use bert or not
-    use_bert = "bert" in config.MODEL_NAME
+    mode = config.MODE
 
     train_dataset, dev_dataset, test_dataset = dataset["datasets"]
     # train_dataset_tf, dev_dataset_tf, test_dataset_tf = dataset["tf_datasets"]  # Uncomment if use custom
 
     # Build model
     model = get_tf_model(
+        args,
         model_name=config.MODEL_NAME,
         freeze=True,
         pos_vocab_size=len(dataset["pos_vocab"]),
@@ -182,16 +172,30 @@ def train_tf(args, config, dataset):
         config=config,
         output_dim=dataset["output_dim"]
     )
+    
+    # # Uncomment for fast model debug
+    # model = get_tf_model(
+    #     model_name=config.MODEL_NAME,
+    #     freeze=True,
+    #     pos_vocab_size=36,
+    #     maxnum=97,
+    #     maxlen=50,
+    #     readability_feature_count=35,
+    #     linguistic_feature_count=51,
+    #     config=config,
+    #     output_dim=9
+    # )
+    # import pdb; pdb.set_trace()
 
     if config.PRETRAIN:
-        pretrained_weights = os.path.join(output_path, f"best_model_prompt_{args.test_prompt_id}.h5")
+        pretrained_weights = os.path.join(output_path, f"current_model_prompt_{args.test_prompt_id}.h5")
         print("Reload model weights: ", pretrained_weights)
         model.load_weights(pretrained_weights)
 
     # # Process dataset
-    train_inputs, _, Y_train = parse_dataset(train_dataset, use_bert) # Uncomment if use not custom
-    parsed_dev_dataset = parse_dataset(dev_dataset, use_bert)
-    parsed_test_dataset = parse_dataset(test_dataset, use_bert)
+    train_inputs, _, Y_train = parse_dataset(train_dataset, mode) # Uncomment if use not custom
+    parsed_dev_dataset = parse_dataset(dev_dataset, mode)
+    parsed_test_dataset = parse_dataset(test_dataset, mode)
 
     # train_dataset_tf = train_dataset_tf.to_tf_dataset(
     #     columns=["input_1", "input_2", "input_3", "input_4", "input_5", "input_6"],
@@ -209,7 +213,8 @@ def train_tf(args, config, dataset):
         parsed_test_dataset,
         save_path=output_path,
         model_name=best_model_name,
-        log_file=log_file
+        log_file=log_file,
+        mode=mode
     )
 
     tbar = tqdm(range(config.EPOCHS), total=config.EPOCHS)
@@ -217,13 +222,17 @@ def train_tf(args, config, dataset):
 
     # Not custom model ------------------------------------------------------------------------
     # Compile model
-    model.compile(loss=tf_masked_loss_function, optimizer=config.OPTIMIZER)
+    if mode == "prompt_tuning":
+        loss_func = tf.keras.losses.BinaryCrossentropy(from_logits=False)
+    else:
+        loss_func = tf_masked_loss_function
+    model.compile(loss=loss_func, optimizer=get_optimizer(config.OPTIMIZER))
 
     for epoch in tbar:
         tbar.set_description(f"[Epoch {epoch + 1}]")
         model.fit(train_inputs, Y_train, batch_size=config.BATCH_SIZE, epochs=1, verbose=1, shuffle=True,
                   callbacks=[WandbCallback()])
-        evaluator.evaluate(model, epoch + 1)
+        evaluator.evaluate(model, epoch + 1, loss_func=loss_func)
     
     # # Custom model ------------------------------------------------------------------------
     # optimizer = tf.keras.optimizers.RMSprop(learning_rate=1e-3)
@@ -243,12 +252,12 @@ def train_tf(args, config, dataset):
     #     })
         
     #     evaluator.evaluate(model, epoch + 1)
-
-    evaluator.print_final_info()
-    evaluator.save_final_info()
+    
+    if not (mode == "prompt_tuning"):
+        evaluator.print_final_info()
+        evaluator.save_final_info()
     
     wandb.save(log_file)
-
     wandb.finish()
 
 
@@ -270,10 +279,13 @@ def main():
     if args.mode == "tensorflow":
         constrain_gpu()
 
-        bert_tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+        bert_tokenizer = None
+        if config.MODE == "use_bert" or config.MODE == "prompt_tuning":
+            bert_tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
         
         # Build dataset
         dataset = get_dataset(config=config, args=args, bert_tokenizer=bert_tokenizer)
+        # dataset = None
 
         # Training
         train_tf(args, config, dataset)

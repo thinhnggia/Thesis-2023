@@ -1,6 +1,7 @@
 import nltk
 import pickle
 import re
+import random
 
 import numpy as np
 import pandas as pd
@@ -329,3 +330,200 @@ def pad_hierarchical_text_sequences(index_sequences, max_sentnum, max_sentlen):
 
         X[i, num:, :] = 0
     return X
+
+
+def parse_dataset(dataset, mode="use_bert"):
+    if mode == "use_bert":
+        inputs = [
+            np.array(dataset["pos"]),
+            np.array(dataset["linguistic"]),
+            np.array(dataset["readability"]),
+            np.array(dataset["input_ids"]),
+            np.array(dataset["attention_mask"]),
+            np.array(dataset["token_type_ids"])
+        ]
+        Y = np.array(dataset["scores"])
+    elif mode == "use_segment":
+        inputs = [
+            np.array(dataset["pos"]),
+            np.array(dataset["linguistic"]),
+            np.array(dataset["readability"]),
+            np.array(dataset["segment_1"]),
+            np.array(dataset["segment_2"]),
+            np.array(dataset["segment_3"]),
+            np.array(dataset["segment_4"]),
+        ]
+        Y = np.array(dataset["scores"])
+    elif mode == "prompt_tuning":
+        inputs = [
+            np.array(dataset["input_ids"]),
+            np.array(dataset["attention_mask"]),
+            np.array(dataset["token_type_ids"])
+        ]
+        Y = np.array(dataset["cr_labels"])
+    else:
+        inputs = [
+            np.array(dataset["pos"]),
+            np.array(dataset["linguistic"]),
+            np.array(dataset["readability"])
+        ]
+        Y = np.array(dataset["scores"])
+
+    prompt_ids = dataset["prompt_ids"]
+    return inputs, prompt_ids, Y 
+
+
+# -------------------------------------------------------------------------
+#                          Discourse corruption
+# -------------------------------------------------------------------------
+def create_training_data_for_di_shuffled_essays(refined_essay, di_list, use_prob=False):
+    essay_orig, essay_shf = di_shuffled_essay(refined_essay, di_list)
+    total_essay = essay_orig + essay_shf
+
+    scores = [1] * len(essay_orig) + [0] * len(essay_shf)
+    return total_essay, scores
+
+
+def di_shuffled_essay(essay_list, di_list):
+    shuffle_essay = []
+    segmented_essay = []
+    
+    for s in essay_list:
+        # Replace discourse indicators with the predefined list.
+        i_di = find_replace_di(s, di_list)
+
+        # Shuffle the discourse indicators in the essay.
+        i_di_shuf, is_corrupt = di_change(i_di)
+
+        segmented_essay.append(s)
+        if is_corrupt:
+            shuffle_essay.append(i_di_shuf)
+
+    return segmented_essay, shuffle_essay
+
+
+def find_replace_di(essay, di_list):
+    
+    # Query will look like: "because|in order to"
+    regex_di = "|".join([" ".join(di) for di in di_list])
+    
+    def _rep(m):
+        return r" DI_{}".format(m.group(2).replace(" ", "_"))
+        
+    essay = re.sub(
+        fr"(^| )({regex_di})(\b)",
+        _rep,
+        essay)
+
+    return essay
+
+
+def di_func1(token, dis):
+    """
+    Replace with random DI
+    """
+    return dis.pop()[3:].replace("_", " ")
+
+
+def di_func2(token, dis):
+    """
+    Delete token
+    """
+    return 
+
+
+def di_func3(token, dis):
+    """
+    Return unchange token
+    """
+    return token
+
+
+def di_rand_func():
+    functions = [di_func1, di_func2, di_func3]
+    chose_func = random.choices(functions, weights=[60, 20, 20], k=1)[0]
+    return chose_func
+
+
+def di_change(essay):
+    tks = [tk for tk in essay.split(" ")]
+    dis = [tk for tk in tks if tk.startswith("DI_")]
+    random.shuffle(dis)
+
+    new_tks = []
+    is_corrupt = False
+    for tk in tks:
+        if tk.startswith("DI_"):
+            chose_func = di_rand_func()
+            new_tk = chose_func(tk, dis)
+            if new_tk:
+                new_tks.append(new_tk)
+                is_corrupt = True
+        else:
+            new_tks.append(tk)
+
+    new_tks = [tk.replace("_", " ") for tk in new_tks]
+    return " ".join(new_tks), is_corrupt
+
+
+def load_discourse_indicators(fn_di):
+    file = open(fn_di)
+    data = file.read()
+    data = data.splitlines()
+
+    lowered_list = [i.lower() for i in data]
+    di_list = [i.split() for i in lowered_list]
+    
+    return sorted(di_list, key=len, reverse=True)
+
+
+def create_training_data_for_shuffled_essays(refined_essay, di_list, use_prob=False):
+    essay_orig, essay_shf = shuffled_essay(refined_essay, di_list)
+    total_essay = essay_orig + essay_shf
+    
+    scores = [1] * len(essay_orig) + [0] * len(essay_shf)    
+    return total_essay, scores
+
+
+def shuffled_essay(essay_list, di_list):
+    shuffle_essay = []
+    segmented_essay = []
+
+    for i in essay_list:
+        s = [x for x in nltk.sent_tokenize(i)]
+        segmented_essay+= [" ".join(s)]
+
+        np.random.shuffle(s)
+        nn = " ".join(s)
+        shuffle_essay+=[nn]
+
+    return segmented_essay, shuffle_essay
+
+
+def create_corrupt_data(essays, di_list, use_prob=False):
+    if use_prob:
+        shufftle_types = [shuffled_essay, di_shuffled_essay]
+        rand_shuf_type = random.choices(shufftle_types, weights=[50, 50], k=1)[0]
+
+        essay_orig, essay_shf = rand_shuf_type(essays, di_list)
+    else:
+        # Create all version of corrupted
+        essay_orig, essay_shf_1 = di_shuffled_essay(essays, di_list)
+        essay_orig, essay_shf_2 = shuffled_essay(essays, di_list)
+        essay_shf = essay_shf_1 + essay_shf_2
+
+    total_essay = essay_orig + essay_shf
+    
+    scores = [1] * len(essay_orig) + [0] * len(essay_shf)    
+    return total_essay, scores
+
+
+def get_corrupt_func(shuffle_type):
+    if shuffle_type == "all":
+        return create_corrupt_data
+    elif shuffle_type == "di":
+        return create_training_data_for_di_shuffled_essays
+    elif shuffle_type == "sentence":
+        return create_training_data_for_shuffled_essays
+    else:
+        raise ValueError("Not supported shuffle type: {}".format(shuffle_type))
