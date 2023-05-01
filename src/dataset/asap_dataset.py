@@ -4,12 +4,12 @@ import math
 import numpy as np
 
 from src.config.config import Configs
-from src.utils.dataset import read_pos_vocab, read_essays, get_scaled_down_scores, pad_hierarchical_text_sequences, get_corrupt_func, load_discourse_indicators
+from src.utils.dataset import read_pos_vocab, read_essays, get_scaled_down_scores, pad_hierarchical_text_sequences, get_corrupt_func, load_discourse_indicators, get_pos_tags_by_tokenizer
 from datasets import Dataset
 from transformers import BertTokenizer
 
 
-def data_pipeline(data, max_sentlen, max_sentnum, config, bert_tokenizer: BertTokenizer = None):
+def data_pipeline(data, max_sentlen, max_sentnum, config, bert_tokenizer: BertTokenizer = None, pos_vocab = {}):
     # Scaled down label score
     data['y_scaled'] = get_scaled_down_scores(data['data_y'], data['prompt_ids'])
 
@@ -48,7 +48,7 @@ def data_pipeline(data, max_sentlen, max_sentnum, config, bert_tokenizer: BertTo
             chunk_sizes = [90, 30, 130,10] # TODO: Currently hard code, refactor to add segment size
         else:
             chunk_sizes = []
-        res = bert_tokenize(data, bert_tokenizer, chunk_sizes=chunk_sizes, shuffle_type=config.SHUFFLE_TYPE)
+        res = bert_tokenize(data, bert_tokenizer, chunk_sizes=chunk_sizes, shuffle_type=config.SHUFFLE_TYPE, pos_vocab=pos_vocab)
         if config.SHUFFLE_TYPE:
             tokenized_documents, labels = res
             dataset_dict = {
@@ -86,6 +86,11 @@ def data_pipeline(data, max_sentlen, max_sentnum, config, bert_tokenizer: BertTo
             tf_dataset_dict["input_5"] = tokenized_documents[0]
             tf_dataset_dict["input_6"] = tokenized_documents[0]
             tf_dataset_dict["input_7"] = tokenized_documents[0]
+        elif config.MODE == "use_custom":
+            dataset_dict["input_ids"] = tokenized_documents["input_ids"]
+            dataset_dict["token_type_ids"] = tokenized_documents["token_type_ids"]
+            dataset_dict["attention_mask"] = tokenized_documents["attention_mask"]
+            dataset_dict["pos_tags"] = tokenized_documents["pos_tags"]
     
     dataset = Dataset.from_dict(dataset_dict)
     tf_dataset = Dataset.from_dict(tf_dataset_dict)
@@ -93,7 +98,7 @@ def data_pipeline(data, max_sentlen, max_sentnum, config, bert_tokenizer: BertTo
     return dataset, tf_dataset
 
 
-def bert_tokenize(data, tokenizer, chunk_sizes, shuffle_type):
+def bert_tokenize(data, tokenizer, chunk_sizes, shuffle_type, pos_vocab):
     original_text = data['original_text']
     labels = None
     if shuffle_type:
@@ -102,6 +107,8 @@ def bert_tokenize(data, tokenizer, chunk_sizes, shuffle_type):
 
     if not chunk_sizes:
         tokenized_documents = tokenizer(original_text, padding='max_length', truncation=True, return_tensors="np")
+        max_doc_len = tokenized_documents["input_ids"].shape[-1]
+        tokenized_documents["pos_tags"] = get_pos_tags_by_tokenizer(max_doc_len, original_text, tokenizer, pos_vocab)
         if labels:
             return tokenized_documents, labels
         else:
@@ -172,9 +179,9 @@ def get_dataset(config: Configs, args, bert_tokenizer: BertTokenizer = None) -> 
     )
     
     # Run data pipeline
-    train_dataset, train_dataset_tf = data_pipeline(train_data, max_sentlen, max_sentnum, config, bert_tokenizer)
-    dev_dataset, dev_dataset_tf = data_pipeline(dev_data, max_sentlen, max_sentnum, config, bert_tokenizer)
-    test_dataset, test_dataset_tf = data_pipeline(test_data, max_sentlen, max_sentnum, config, bert_tokenizer)
+    train_dataset, train_dataset_tf = data_pipeline(train_data, max_sentlen, max_sentnum, config, bert_tokenizer, pos_vocab)
+    dev_dataset, dev_dataset_tf = data_pipeline(dev_data, max_sentlen, max_sentnum, config, bert_tokenizer, pos_vocab)
+    test_dataset, test_dataset_tf = data_pipeline(test_data, max_sentlen, max_sentnum, config, bert_tokenizer, pos_vocab)
     
     if config.SHUFFLE_TYPE:
         return {

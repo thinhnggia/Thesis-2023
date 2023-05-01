@@ -3,6 +3,7 @@ import tensorflow as tf
 import numpy as np
 
 from transformers import TFBertModel
+from src.models.tensorflow.mod_bert import ModTFBertModel
 
 
 class PrefixEncoderTF(tf.keras.layers.Layer):
@@ -36,12 +37,17 @@ class TFBertPrefix(tf.keras.Model):
     """
     Prompt-tuning V2
     """
-    def __init__(self, config, freeze=True):
+    def __init__(self, config, use_custom=False, freeze=True):
         super().__init__()
         # Bert 
         self.num_labels = config.num_labels
         self.config = config
-        self.bert = TFBertModel.from_pretrained(config.model_name_or_path)
+        self.use_custom = use_custom
+        if not use_custom:
+            self.bert = TFBertModel.from_pretrained(config.model_name_or_path)
+        else:
+            self.bert = ModTFBertModel.from_pretrained(config.model_name_or_path, config=config)
+
         # TODO: Currently hard code dropout rate
         self.dropout = layers.Dropout(rate=0.1)
         
@@ -65,11 +71,13 @@ class TFBertPrefix(tf.keras.Model):
         past_key_values = tf.reshape(past_key_values, [batch_size, self.pre_seq_len, self.n_layer * 2, self.n_head, self.n_embd])
         past_key_values = self.dropout(past_key_values, training=training)
         past_key_values = tf.transpose(past_key_values, perm=[2, 0, 3, 1, 4])
-        past_key_values = tf.split(past_key_values, num_or_size_splits=12, axis=0)
+        # past_key_values = tf.split(past_key_values, num_or_size_splits=12, axis=0)
+        past_key_values = tf.split(past_key_values, num_or_size_splits=24, axis=0)
         return past_key_values
     
     def call(self, 
             input_ids=None,
+            pos_ids=None,
             attention_mask=None,
             token_type_ids=None,
             position_ids=None,
@@ -85,18 +93,34 @@ class TFBertPrefix(tf.keras.Model):
         prefix_attention_mask = tf.ones([batch_size, self.pre_seq_len], dtype=tf.int32)
         attention_mask = tf.concat([prefix_attention_mask, attention_mask], axis=1)
 
-        outputs = self.bert(
-            input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            past_key_values=past_key_values,
-            position_ids=position_ids,
-            head_mask=head_mask,
-            inputs_embeds=inputs_embeds,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-            training=training
-        )
+        if not self.use_custom:
+            outputs = self.bert(
+                input_ids,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+                past_key_values=past_key_values,
+                position_ids=position_ids,
+                head_mask=head_mask,
+                inputs_embeds=inputs_embeds,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                training=training
+            )
+        else:
+            outputs = self.bert(
+                input_ids,
+                pos_ids,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+                past_key_values=past_key_values,
+                position_ids=position_ids,
+                head_mask=head_mask,
+                inputs_embeds=inputs_embeds,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                training=training
+            )
 
         return outputs

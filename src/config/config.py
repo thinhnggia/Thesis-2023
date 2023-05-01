@@ -5,9 +5,9 @@ class Configs:
     CNN_KERNEL_SIZE = 5
     LSTM_UNITS = 100
     EMBEDDING_DIM = 50
-    MODEL_NAME = "cts_bert_prompt"
+    MODEL_NAME = "custom_split_cts_bert_prompt"
     # CHUNK_SIZES = [90, 30, 130,10]
-    MODE = "use_bert"
+    MODE = "use_custom"
     SHUFFLE_TYPE = None
 
     # Data configuration
@@ -16,9 +16,10 @@ class Configs:
     READABILITY_PATH = 'src/data/ASAP/allreadability.pickle'
     
     # Training configuration
-    EPOCHS = 30
-    BATCH_SIZE = 7
+    EPOCHS = 50
+    BATCH_SIZE = 4
     OUTPUT_PATH = 'outputs'
     OPTIMIZER = "rmsprop"
     PRETRAIN = False
-    PRETRAIN_BERT = True
+    PRETRAIN_BERT = False
+    BASE_MODEL_NAME = "bert-large-uncased"

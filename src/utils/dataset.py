@@ -361,6 +361,16 @@ def parse_dataset(dataset, mode="use_bert"):
             np.array(dataset["token_type_ids"])
         ]
         Y = np.array(dataset["cr_labels"])
+    elif mode == "use_custom":
+        inputs = [
+            np.array(dataset["pos_tags"]),
+            np.array(dataset["linguistic"]),
+            np.array(dataset["readability"]),
+            np.array(dataset["input_ids"]),
+            np.array(dataset["attention_mask"]),
+            np.array(dataset["token_type_ids"])
+        ]
+        Y = np.array(dataset["scores"])
     else:
         inputs = [
             np.array(dataset["pos"]),
@@ -527,3 +537,27 @@ def get_corrupt_func(shuffle_type):
         return create_training_data_for_shuffled_essays
     else:
         raise ValueError("Not supported shuffle type: {}".format(shuffle_type))
+    
+
+def get_pos_tags_by_tokenizer(max_length, original_text, tokenizer, pos_vocab):
+    list_pos_tags = []
+    for text in original_text:
+        tokens = tokenizer.tokenize(text)
+        pos_tags = nltk.pos_tag(tokens=tokens)
+        
+        tag_indices = []
+        for tag in pos_tags:
+            if tag[1] in pos_vocab:
+                tag_indices.append(pos_vocab[tag[1]])
+            else:
+                tag_indices.append(pos_vocab['<unk>'])
+        tag_indices = [pos_vocab['<unk>']] + tag_indices + [pos_vocab['<unk>']]
+        if len(tag_indices) < max_length:
+            padding = max_length - len(tag_indices)
+            padding_indices = tag_indices + [pos_vocab['<pad>']] * padding
+        else:
+            padding_indices = tag_indices[:max_length]
+
+        assert len(padding_indices) == max_length
+        list_pos_tags.append(padding_indices)
+    return list_pos_tags

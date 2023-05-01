@@ -1,7 +1,9 @@
 import tensorflow as tf
 
-from transformers import TFBertModel, BertConfig, TFBertMainLayer, TFBertEncoder, TFBertPooler, TFBertPreTrainedModel, shape_list 
+from transformers import BertConfig
+from transformers.models.bert.modeling_tf_bert import TFBertEncoder, TFBertPooler, TFBertPreTrainedModel, shape_list 
 from transformers.modeling_tf_utils import get_initializer, keras_serializable, unpack_inputs
+from transformers.utils import DUMMY_INPUTS
 from transformers.modeling_tf_outputs import TFBaseModelOutputWithPoolingAndCrossAttentions
 
 
@@ -46,15 +48,14 @@ class ModTFBertEmbeddings(tf.keras.layers.Layer):
                 shape=[self.config.pos_vocab_size, self.hidden_size],
                 initializer=get_initializer(self.initializer_range)
             )
-
         super().build(input_shape)
 
     def call(
         self,
         input_ids: tf.Tensor = None,
+        pos_ids: tf.Tensor = None,
         position_ids: tf.Tensor = None,
         token_type_ids: tf.Tensor = None,
-        pos_ids: tf.Tensor = None,
         inputs_embeds: tf.Tensor = None,
         past_key_values_length=0,
         training: bool = False,
@@ -93,7 +94,7 @@ class ModTFBertEmbeddings(tf.keras.layers.Layer):
             position_ids = tf.expand_dims(
                 tf.range(start=past_key_values_length, limit=input_shape[1] + past_key_values_length), axis=0
             )
-
+        
         position_embeds = tf.gather(params=self.position_embeddings, indices=position_ids)
         token_type_embeds = tf.gather(params=self.token_type_embeddings, indices=token_type_ids)
         final_embeddings = inputs_embeds + position_embeds + token_type_embeds + pos_embeds
@@ -149,7 +150,7 @@ class ModTFBertMainLayer(tf.keras.layers.Layer):
         output_hidden_states = None,
         return_dict = None,
         training: bool = False,
-    ):
+    ):  
         if not self.config.is_decoder:
             use_cache = False
 
@@ -297,6 +298,19 @@ class ModTFBertModel(TFBertPreTrainedModel):
         super().__init__(config, *inputs, **kwargs)
 
         self.bert = ModTFBertMainLayer(config, name="bert")
+
+    @property
+    def dummy_inputs(self):
+        """
+        Dummy inputs to build the network.
+
+        Returns:
+            `Dict[str, tf.Tensor]`: The dummy inputs.
+        """
+        return {
+            "input_ids": tf.constant(DUMMY_INPUTS, dtype=tf.int32),
+            "pos_ids": tf.constant(DUMMY_INPUTS, dtype=tf.int32)
+        }
 
     @unpack_inputs
     def call(
