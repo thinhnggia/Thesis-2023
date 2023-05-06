@@ -42,12 +42,12 @@ class ModTFBertEmbeddings(tf.keras.layers.Layer):
                 initializer=get_initializer(self.initializer_range),
             )
 
-        with tf.name_scope("pos_embeddings"):
-            self.pos_embeddings = self.add_weight(
-                name="embeddings",
-                shape=[self.config.pos_vocab_size, self.hidden_size],
-                initializer=get_initializer(self.initializer_range)
-            )
+        # with tf.name_scope("pos_embeddings"):
+        #     self.pos_embeddings = self.add_weight(
+        #         name="embeddings",
+        #         shape=[self.config.pos_vocab_size, self.hidden_size],
+        #         initializer=get_initializer(self.initializer_range)
+        #     )
         super().build(input_shape)
 
     def call(
@@ -82,22 +82,25 @@ class ModTFBertEmbeddings(tf.keras.layers.Layer):
             )
             inputs_embeds = tf.gather(params=self.weight, indices=input_ids)
 
-        if pos_ids is not None:
-            pos_embeds = tf.gather(params=self.pos_embeddings, indices=pos_ids)
+        # if pos_ids is not None:
+        #     pos_embeds = tf.gather(params=self.pos_embeddings, indices=pos_ids)
 
         input_shape = shape_list(inputs_embeds)[:-1]
 
         if token_type_ids is None:
             token_type_ids = tf.fill(dims=input_shape, value=0)
-
+        print("Position ids before: ", position_ids)
         if position_ids is None:
             position_ids = tf.expand_dims(
                 tf.range(start=past_key_values_length, limit=input_shape[1] + past_key_values_length), axis=0
             )
+        print("Position ids after: ", position_ids.numpy())
+        print("Position ids shape: ", position_ids.shape)
         
         position_embeds = tf.gather(params=self.position_embeddings, indices=position_ids)
         token_type_embeds = tf.gather(params=self.token_type_embeddings, indices=token_type_ids)
-        final_embeddings = inputs_embeds + position_embeds + token_type_embeds + pos_embeds
+        # final_embeddings = inputs_embeds + position_embeds + token_type_embeds + pos_embeds
+        final_embeddings = inputs_embeds + position_embeds + token_type_embeds
         final_embeddings = self.LayerNorm(inputs=final_embeddings)
         final_embeddings = self.dropout(inputs=final_embeddings, training=training)
 

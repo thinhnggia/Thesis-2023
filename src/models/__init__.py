@@ -189,7 +189,7 @@ def get_tf_model(args, model_name, pretrain_name="bert-base-uncased", freeze=Tru
         base_config.pos_dropout_prob = config.DROPOUT
 
 
-        base_model = TFBertPrefix(base_config, use_custom=False, freeze=freeze)
+        base_model = TFBertPrefix(base_config, use_custom=True, freeze=freeze)
         # temp_model = ModSplitCTSBertTF(base_model, base_config, 
         #                           output_dim=kwargs.get("output_dim"),
         #                           linguistic_feature_count=kwargs.get("linguistic_feature_count"),

@@ -265,11 +265,12 @@ def read_essays(read_configs, pos_vocab):
     linguistic_features = get_linguistic_features(read_configs['features_path'])
     normalized_linguistic_features = get_normalized_features(linguistic_features)
     with open(read_configs['train_path'], 'rb') as train_file:
-        train_essays_list = pickle.load(train_file)
+        train_essays_list = pickle.load(train_file)[:20]
     with open(read_configs['dev_path'], 'rb') as dev_file:
-        dev_essays_list = pickle.load(dev_file)
+        dev_essays_list = pickle.load(dev_file)[:20]
     with open(read_configs['test_path'], 'rb') as test_file:
-        test_essays_list = pickle.load(test_file)
+        test_essays_list = pickle.load(test_file)[:20]
+
     train_data = read_essay_sets(train_essays_list, readability_features, normalized_linguistic_features, pos_vocab)
     dev_data = read_essay_sets(dev_essays_list, readability_features, normalized_linguistic_features, pos_vocab)
     test_data = read_essay_sets(test_essays_list, readability_features, normalized_linguistic_features, pos_vocab)
