@@ -26,6 +26,7 @@ class ZeroMaskedEntriesTF(Layer):
     def compute_mask(self, input_shape, input_mask=None):
         return None
 
+
 class AttentionTF(Layer):
     """
     Attention tensorflow

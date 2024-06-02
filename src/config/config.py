@@ -5,7 +5,7 @@ class Configs:
     CNN_KERNEL_SIZE = 5
     LSTM_UNITS = 100
     EMBEDDING_DIM = 50
-    MODEL_NAME = "custom_split_cts_bert_prompt"
+    MODEL_NAME = "cts_prompt"
     # CHUNK_SIZES = [90, 30, 130,10]
     MODE = "use_custom"
     SHUFFLE_TYPE = None
